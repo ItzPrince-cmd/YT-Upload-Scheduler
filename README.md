@@ -82,7 +82,7 @@ source venv/bin/activate
 ### 4. Install Required Python Libraries
 
 ```bash
-pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client
+pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client pytz
 ```
 
 ### 5. Add OAuth 2.0 Client Credentials
