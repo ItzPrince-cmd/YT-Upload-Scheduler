@@ -36,11 +36,22 @@ channels_metadata = {
 def generate_csv(channel_name, video_filenames, title, description, tags):
     csv_file = os.path.join(METADATA_PATH, f'{channel_name}.csv')
     os.makedirs(METADATA_PATH, exist_ok=True)
+    
+    existing_metadata = []
+    if os.path.exists(csv_file):
+        with open(csv_file, mode='r', newline='', encoding='utf-8') as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                existing_metadata.append(row)
+
     with open(csv_file, 'w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
         writer.writerow(['filename', 'title', 'description', 'tags'])
+        for row in existing_metadata:
+            writer.writerow([row['filename'], row['title'], row['description'], row['tags']])
         for filename in video_filenames:
-            writer.writerow([filename, title, description, tags])
+            if filename not in [row['filename'] for row in existing_metadata]:
+                writer.writerow([filename, title, description, tags])
 
 def list_video_filenames(channel_name):
     video_folder = os.path.join(VIDEO_PATH, channel_name)
