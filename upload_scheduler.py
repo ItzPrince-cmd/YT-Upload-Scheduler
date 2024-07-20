@@ -3,10 +3,15 @@ import csv
 import pickle
 import datetime
 import pytz
+import logging
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.auth.transport.requests import Request
+
+# Setup logging
+logging.basicConfig(filename='upload_videos.log', level=logging.INFO, 
+                    format='%(asctime)s %(levelname)s:%(message)s')
 
 # Scopes for YouTube Data API
 SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
@@ -44,7 +49,9 @@ def generate_csv(channel_name, video_filenames, title, description, tags):
             for row in reader:
                 existing_metadata.append(row)
 
-    with open(csv_file, 'w', newline='', encoding='utf-8') as file:
+    # Atomic write
+    temp_csv_file = f'{csv_file}.tmp'
+    with open(temp_csv_file, 'w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
         writer.writerow(['filename', 'title', 'description', 'tags'])
         for row in existing_metadata:
@@ -52,6 +59,7 @@ def generate_csv(channel_name, video_filenames, title, description, tags):
         for filename in video_filenames:
             if filename not in [row['filename'] for row in existing_metadata]:
                 writer.writerow([filename, title, description, tags])
+    os.replace(temp_csv_file, csv_file)
 
 def list_video_filenames(channel_name):
     video_folder = os.path.join(VIDEO_PATH, channel_name)
@@ -66,10 +74,18 @@ def authenticate(channel_name):
             creds = pickle.load(token)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            try:
+                creds.refresh(Request())
+            except Exception as e:
+                logging.error(f"Failed to refresh credentials for {channel_name}: {e}")
+                return None
         else:
-            flow = InstalledAppFlow.from_client_secrets_file('client_secret.json', SCOPES)
-            creds = flow.run_local_server(port=0)
+            try:
+                flow = InstalledAppFlow.from_client_secrets_file('client_secret.json', SCOPES)
+                creds = flow.run_local_server(port=0)
+            except Exception as e:
+                logging.error(f"Failed to authenticate for {channel_name}: {e}")
+                return None
         with open(token_file, 'wb') as token:
             pickle.dump(creds, token)
     return build('youtube', 'v3', credentials=creds)
@@ -77,16 +93,17 @@ def authenticate(channel_name):
 def read_metadata_from_csv(channel_name):
     metadata = []
     csv_file = os.path.join(METADATA_PATH, f'{channel_name}.csv')
-    with open(csv_file, mode='r', newline='', encoding='utf-8') as file:
-        reader = csv.DictReader(file)
-        for row in reader:
-            tags = row['tags'].split(',')
-            metadata.append({
-                'filename': row['filename'],
-                'title': row['title'],
-                'description': row['description'],
-                'tags': tags
-            })
+    if os.path.exists(csv_file):
+        with open(csv_file, mode='r', newline='', encoding='utf-8') as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                tags = row['tags'].split(',')
+                metadata.append({
+                    'filename': row['filename'],
+                    'title': row['title'],
+                    'description': row['description'],
+                    'tags': tags
+                })
     return metadata
 
 def schedule_video_upload(youtube, video_path, title, description, tags, upload_time):
@@ -110,9 +127,12 @@ def schedule_video_upload(youtube, video_path, title, description, tags, upload_
         media_body=media
     )
     response = None
-    while response is None:
-        status, response = request.next_chunk()
-    print(f'Uploaded: {title} scheduled for {upload_time}')
+    try:
+        while response is None:
+            status, response = request.next_chunk()
+        logging.info(f'Uploaded: {title} scheduled for {upload_time}')
+    except Exception as e:
+        logging.error(f"Failed to upload {video_path}: {e}")
     return response
 
 def get_upload_times(current_time, uploads_per_day):
@@ -143,13 +163,13 @@ def main():
     for channel_name, metadata in channels_metadata.items():
         video_filenames = list_video_filenames(channel_name)
         if not video_filenames:
-            print(f'No videos found for {channel_name}')
+            logging.info(f'No videos found for {channel_name}')
             continue
         title = metadata['title']
         description = metadata['description']
         tags = metadata['tags']
         generate_csv(channel_name, video_filenames, title, description, tags)
-        print(f'CSV file generated for {channel_name} with {len(video_filenames)} videos.')
+        logging.info(f'CSV file generated for {channel_name} with {len(video_filenames)} videos.')
 
     # Part 2: Schedule video uploads
     channels = [
@@ -163,6 +183,9 @@ def main():
         uploads_per_day = channel['uploads_per_day']
         metadata = read_metadata_from_csv(channel_name)
         youtube = authenticate(channel_name)
+        if not youtube:
+            logging.error(f"Skipping upload for {channel_name} due to authentication failure.")
+            continue
 
         current_time = datetime.datetime.now(pytz.timezone('Asia/Kolkata'))
 
@@ -170,7 +193,7 @@ def main():
 
         for i in range(uploads_per_day):
             if i >= len(metadata):
-                print(f'Not enough videos for {channel_name} to schedule {uploads_per_day} uploads.')
+                logging.info(f'Not enough videos for {channel_name} to schedule {uploads_per_day} uploads.')
                 break
             video = metadata[i]
             video_path = os.path.join(VIDEO_PATH, channel_name, video["filename"])
@@ -179,7 +202,7 @@ def main():
             tags = video['tags']
 
             if video["filename"] in uploaded_videos:
-                print(f'Skipping already uploaded video: {video["filename"]}')
+                logging.info(f'Skipping already uploaded video: {video["filename"]}')
                 continue
 
             upload_time = upload_times[i]
