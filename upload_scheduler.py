@@ -38,6 +38,10 @@ channels_metadata = {
     # Add metadata for more channels as needed
 }
 
+def is_valid_video_file(filename):
+    valid_extensions = ['.mp4', '.avi', '.mov', '.mkv']
+    return any(filename.lower().endswith(ext) for ext in valid_extensions)
+
 def generate_csv(channel_name, video_filenames, title, description, tags):
     csv_file = os.path.join(METADATA_PATH, f'{channel_name}.csv')
     os.makedirs(METADATA_PATH, exist_ok=True)
@@ -63,7 +67,7 @@ def generate_csv(channel_name, video_filenames, title, description, tags):
 
 def list_video_filenames(channel_name):
     video_folder = os.path.join(VIDEO_PATH, channel_name)
-    video_filenames = [filename for filename in os.listdir(video_folder) if os.path.isfile(os.path.join(video_folder, filename))]
+    video_filenames = [filename for filename in os.listdir(video_folder) if os.path.isfile(os.path.join(video_folder, filename)) and is_valid_video_file(filename)]
     return video_filenames
 
 def authenticate(channel_name):
