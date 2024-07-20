@@ -61,7 +61,7 @@ The project directory should be organized as follows:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-repo/automated-youtube-uploader.git
+git clone https://github.com/ItzPrince-cmd/YT-Upload-Scheduler.git
 cd automated-youtube-uploader
 ```
 
